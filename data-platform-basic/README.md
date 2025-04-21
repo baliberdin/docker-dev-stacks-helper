@@ -22,7 +22,7 @@ O container do LocalStack foi configurado esperando um token de conta Pro, que p
 
 ## Iniciando os serviços
 Crie uma cópia do arquivo *.env.template* e renomeie para *.env*
-Adicione o seu token do LocalStack dentro do arquivo .env
+e adicione o seu token do LocalStack dentro do arquivo .env
 
 `LOCALSTACK_AUTH_TOKEN="your_localstack_auth_token"`
 
@@ -63,9 +63,9 @@ Exemplo de query via DBeaver através de uma conexão com o Trino
 -- jupyterhub/work/get_started.ipynb
 USE delta.datalake;
 
--- A tabela simple_table foi criada no Notebook de exemplo.
--- jupyterhub/work/get_started.ipynb
-SELECT COUNT(1) AS total FROM simple_table; 
+-- A tabela stock_price_history foi criada no 
+-- Notebook de exemplo jupyterhub/work/get_started.ipynb
+SELECT COUNT(1) AS total FROM stock_price_history; 
 ```
 
 ### Spark
