@@ -43,4 +43,4 @@ access-jupyterhub: read-jupyter-log
 	@xdg-open ${JUPYTERHUB_URL}
 
 download-dependencies:
-	./libs/download-libs.sh
+	@./libs/download-libs.sh
