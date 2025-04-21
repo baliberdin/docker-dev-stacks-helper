@@ -1,0 +1,10 @@
+.env
+.venv
+.terraform
+.tool-versions
+jupyter.log
+.ipynb_checkpoints
+terraform.tfstate
+terraform.tfstate.backup
+.terraform.lock.hcl
+*.jar

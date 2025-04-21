@@ -1,0 +1,92 @@
+services:
+
+  localstack:
+    image: ${LOCALSTACK_IMAGE}
+    container_name: localstack
+    hostname: localstack
+    ports:
+      - "4566:4566"
+    environment:
+      DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN}
+
+    volumes:
+      - ./localstack:/tmp:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  hive-metastore-db:
+    image: postgres:${POSTGRES_VERSION}
+    container_name: hive-metastore-db
+    restart: always
+    ports:
+      - 5432:5432
+    command: -c config_file=/etc/postgresql/postgresql.conf
+    environment:
+      POSTGRES_DB: metastore_db
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+    volumes:
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf
+
+  hive-metastore:
+    image: apache/hive:${HIVE_VERSION}
+    container_name: hive-metastore
+    restart: always
+    depends_on:
+      hive-metastore-db:
+        condition: service_healthy
+    ports:
+      - 9083:9083
+    environment:
+      SKIP_SCHEMA_INIT: "true"
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      HADOOP_CLASSPATH: /opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/hdfs:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/yarn:/opt/hadoop/share/hadoop/yarn/lib/*:/opt/hadoop/share/hadoop/yarn/*
+    volumes:
+      #- ./home:/home/hive
+      - ./hive/hive-site.xml:/opt/hive/conf/hive-site.xml
+      - ./hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      # Libs
+      - ./libs/postgresql-42.7.3.jar:/opt/hive/lib/postgresql-42.7.3.jar
+      - ./libs/aws-java-sdk-bundle-1.11.1026.jar:/opt/hive/lib/aws-java-sdk-bundle-1.11.1026.jar
+      - ./libs/hadoop-aws-3.1.0.jar:/opt/hive/lib/hadoop-aws-3.1.0.jar
+
+  jupyterhub:
+    image:  jupyter/all-spark-notebook:spark-3.4.1
+    hostname: jupyterhub
+    container_name: jupyterhub
+    ports:
+      - 8888:8888
+      - 4040:4040
+    volumes:
+      - ./jupyterhub/work:/home/jovyan/work
+      - ./hadoop/core-site.xml:/usr/local/spark/conf/core-site.xml
+
+  trino:
+    image: trinodb/trino:${TRINO_VERSION}
+    container_name: trino
+    restart: always
+    depends_on:
+      hive-metastore:
+        condition: service_started
+    volumes:
+      - ./trino/delta.properties:/etc/trino/catalog/delta.properties
+    ports:
+      - 8080:8080
+
+networks:
+  default:
+    external: false
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1
+    name: data-platform-basic
