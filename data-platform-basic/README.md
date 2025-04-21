@@ -1,6 +1,8 @@
 # Data Platform Stack - Basic
 Stack básica de plataforma de dados onde é possível utilizar notebooks Jupyter com Spark para explorar, processar e salvar os dados em um bucket do S3 (LocalStack) no formato Delta Lake e/ou Parquet. Além disso conta com o Metasore do Hive para centralizar os metadados e o Trino que permite executar queries SQL nos dados do S3 utilizando algum client JDBC como por exemplo o DBeaver.
 
+Caso esteja procurando pela stack com Hadoop HDFS no lugar do LocalStack (S3) vide [data-platform-basic-hadoop](../data-platform-basic-hadoop/)
+
 ### Atenção: Todos os dados serão perdidos ao parar os serviços. Todas as stacks desse repositório são destinadas apenas para desenvolvimento e estudos.
 
 ## Stack
@@ -21,7 +23,7 @@ Stack básica de plataforma de dados onde é possível utilizar notebooks Jupyte
 O container do LocalStack foi configurado esperando um token de conta Pro, que pode ser adquirido com a inscrição do tipo *Hobby Subscription*. Caso a sua inscrição não seja Pro modifique a imagem do LocalStack no arquivo *.env*
 
 ## Iniciando os serviços
-Crie uma cópia do arquivo *.env.template* e renomeie para *.env*
+IMPORTANTE: Crie uma cópia do arquivo *.env.template* e renomeie para *.env*
 e adicione o seu token do LocalStack dentro do arquivo .env
 
 `LOCALSTACK_AUTH_TOKEN="your_localstack_auth_token"`

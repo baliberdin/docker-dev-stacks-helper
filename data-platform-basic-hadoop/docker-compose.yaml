@@ -1,0 +1,119 @@
+x-common-config:
+  &common-config
+  image: ${HADOOP_IMAGE}:${HADOOP_VERSION}
+  env_file:
+    - ./hadoop/config
+
+services:
+
+  hadoop-namenode:
+    <<: *common-config
+    hostname: hadoop-namenode
+    container_name: hadoop-namenode
+    command: ["hdfs", "namenode"]
+    ports:
+      - 9870:9870
+      - 9866:9866
+      - 8020:8020
+      - 50475:50475
+    environment:
+      ENSURE_NAMENODE_DIR: "/tmp/hadoop-root/dfs/name"
+    volumes:
+      - ./hdfs/create_dir.sh:/tmp/create_dir.sh
+    healthcheck:
+      test: ["CMD-SHELL", "hdfs dfsadmin -report"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+
+  hadoop-datanode:
+    <<: *common-config
+    command: ["hdfs", "datanode"]
+    container_name: hadoop-datanode
+
+  hadoop-resourcemanager:
+    <<: *common-config
+    hostname: resourcemanager
+    command: ["yarn", "resourcemanager"]
+    container_name: hadoop-resourcemanager
+    ports:
+      - 8088:8088
+  
+  hadoop-nodemanager:
+    <<: *common-config
+    command: ["yarn", "nodemanager"]
+    container_name: hadoop-nodemanager
+
+  hive-metastore-db:
+    image: postgres:${POSTGRES_VERSION}
+    container_name: hive-metastore-db
+    restart: always
+    ports:
+      - 5432:5432
+    command: -c config_file=/etc/postgresql/postgresql.conf
+    environment:
+      POSTGRES_DB: metastore_db
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+    volumes:
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf
+
+  hive-metastore:
+    image: apache/hive:${HIVE_VERSION}
+    container_name: hive-metastore
+    restart: always
+    depends_on:
+      hive-metastore-db:
+        condition: service_healthy
+    ports:
+      - 9083:9083
+    environment:
+      SKIP_SCHEMA_INIT: "true"
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      HADOOP_CLASSPATH: /opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/hdfs:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/yarn:/opt/hadoop/share/hadoop/yarn/lib/*:/opt/hadoop/share/hadoop/yarn/*
+    volumes:
+      #- ./home:/home/hive
+      - ./hive/hive-site.xml:/opt/hive/conf/hive-site.xml
+      # Libs
+      - ./libs/postgresql-42.7.3.jar:/opt/hive/lib/postgresql-42.7.3.jar
+      - ./libs/aws-java-sdk-bundle-1.11.1026.jar:/opt/hive/lib/aws-java-sdk-bundle-1.11.1026.jar
+      - ./libs/hadoop-aws-3.1.0.jar:/opt/hive/lib/hadoop-aws-3.1.0.jar
+
+  jupyterhub:
+    image:  jupyter/all-spark-notebook:spark-3.4.1
+    hostname: jupyterhub
+    container_name: jupyterhub
+    ports:
+      - 8888:8888
+      - 4040:4040
+    volumes:
+      - ./jupyterhub/work:/home/jovyan/work
+
+  trino:
+    image: trinodb/trino:${TRINO_VERSION}
+    container_name: trino
+    restart: always
+    depends_on:
+      hive-metastore:
+        condition: service_started
+    volumes:
+      - ./trino/delta.properties:/etc/trino/catalog/delta.properties
+    ports:
+      - 8080:8080
+
+networks:
+  default:
+    external: false
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1
+    name: data-platform-basic
