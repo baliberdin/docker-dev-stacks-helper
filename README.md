@@ -6,5 +6,5 @@ Este repositório é um conjunto de stacks de ambientes de desenvolvimento/estud
 - [Data Platform - Basic (LocalStack)](./data-platform-basic)
 Plataforma simples com LocalStack(S3), Hive Metastore, Trino e Jupyterhub(Spark + Delta Lake) para transformação e exploração de dados.
 
-- [Data Platform - Basic (Hadoop)](./data-platform-stream)
+- [Data Platform - Basic (Hadoop)](./data-platform-basic-hadoop)
 Plataforma simples com Hadoop(HDFS), Hive Metastore, Trino e Jupyterhub(Spark + Delta Lake) para transformação e exploração de dados.
