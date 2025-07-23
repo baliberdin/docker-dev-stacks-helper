@@ -1,0 +1,396 @@
+name: dp.streams
+
+x-common-config:
+  &common-config
+  image: ${HADOOP_IMAGE}:${HADOOP_VERSION}
+  env_file:
+    - ./hadoop/config
+
+x-network-config:
+  &network-config
+  hostname: schemaregistry
+  domainname: ${COMPOSE_PROJECT_NAME}
+
+
+services: 
+  hadoop-namenode:
+    <<: *common-config
+    hostname: hadoop-namenode
+    container_name: hadoop-namenode
+    command: ["hdfs", "namenode"]
+    ports:
+      - 9870:9870
+      - 9866:9866
+      - 8020:8020
+      - 50475:50475
+    environment:
+      ENSURE_NAMENODE_DIR: "/tmp/hadoop-root/dfs/name"
+    volumes:
+      - ./hdfs/create_dir.sh:/tmp/create_dir.sh
+    healthcheck:
+      test: ["CMD-SHELL", "hdfs dfsadmin -report"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+
+  hadoop-datanode:
+    <<: *common-config
+    command: ["hdfs", "datanode"]
+    container_name: hadoop-datanode
+
+  hadoop-resourcemanager:
+    <<: *common-config
+    hostname: resourcemanager
+    command: ["yarn", "resourcemanager"]
+    container_name: hadoop-resourcemanager
+    ports:
+      - 8088:8088
+  
+  hadoop-nodemanager:
+    <<: *common-config
+    command: ["yarn", "nodemanager"]
+    container_name: hadoop-nodemanager
+      
+  hive-metastore-db:
+    image: postgres:${POSTGRES_VERSION}
+    container_name: hive-metastore-db
+    restart: always
+    ports:
+      - 5432:5432
+    command: -c config_file=/etc/postgresql/postgresql.conf
+    environment:
+      POSTGRES_DB: metastore_db
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+    volumes:
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf
+
+  hive-metastore:
+    image: apache/hive:${HIVE_VERSION}
+    container_name: hive-metastore
+    restart: always
+    depends_on:
+      hive-metastore-db:
+        condition: service_healthy
+    ports:
+      - 9083:9083
+    environment:
+      SKIP_SCHEMA_INIT: "true"
+      #IS_RESUME: "true"
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      HADOOP_CLASSPATH: /opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/hdfs:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/yarn:/opt/hadoop/share/hadoop/yarn/lib/*:/opt/hadoop/share/hadoop/yarn/*
+    volumes:
+      #- ./home:/home/hive
+      - ./hive/hive-site.xml:/opt/hive/conf/hive-site.xml
+      # Libs
+      - ./libs/postgresql-42.7.3.jar:/opt/hive/lib/postgresql-42.7.3.jar
+      - ./libs/aws-java-sdk-bundle-1.11.1026.jar:/opt/hive/lib/aws-java-sdk-bundle-1.11.1026.jar
+      - ./libs/hadoop-aws-3.1.0.jar:/opt/hive/lib/hadoop-aws-3.1.0.jar
+      - ./libs/flink-sql-connector-hive-3.1.3_2.12-1.20.1.jar:/opt/flink/lib/flink-sql-connector-hive-3.1.3_2.12-1.20.1.jar
+      - ./libs/flink-sql-connector-kafka-3.3.0-1.20.jar:/opt/flink/lib/flink-sql-connector-kafka-3.3.0-1.20.jar
+      
+  flink-jobmanager: 
+    image: flink:${FLINK_VERSION}
+    restart: unless-stopped
+    container_name: flink-jobmanager
+    hostname: flink-jobmanager
+    ports: 
+      - 8081:8081
+      - 6123:6123
+    command: jobmanager
+    environment: 
+      HADOOP_USER_NAME: hive
+      HADOOP_CLASSPATH: /opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/hdfs:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/yarn:/opt/hadoop/share/hadoop/yarn/lib/*:/opt/hadoop/share/hadoop/yarn/* 
+      FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager \n
+        state.backend.type: rocksdb \n
+        execution.checkpointing.dir: hdfs://hadoop-namenode/raw.datalake.mydomain.com/checkpointing/checkpoints \n
+        execution.checkpointing.savepoint-dir: hdfs://hadoop-namenode/raw.datalake.mydomain.com/checkpointing/savepoints \n
+        execution.checkpointing.interval: 10 \n
+        state.checkpointing.dir: hdfs://hadoop-namenode/raw.datalake.mydomain.com/checkpointing/checkpoints \n
+        state.checkpointing.savepoint-dir: hdfs://hadoop-namenode/raw.datalake.mydomain.com/checkpointing/savepoints \n
+        state.checkpointing.interval: 10 \n
+        table.catalog-store.kind: file \n
+        table.catalog-store.file.path: /opt/flink/conf/catalogs \n
+        hive.metastore.uris: thrift://hive-metastore:9083"
+
+      #FLINK_HEAP_SIZE: 2g
+      DISABLE_JEMALLOC: true 
+      # Configuração para usar o Hive Metastore 
+      FLINK_HIVE_METASTORE_URI: thrift://hive-metastore:9083  
+    volumes: 
+      - ./hive/hive-site.xml:/opt/hive/conf/hive-site.xml
+      - ./flink/sql-gateway-defaults.yaml:/opt/flink/conf/sql-gateway-defaults.yaml
+      #- ./flink/config.yaml:/opt/flink/conf/config.yaml
+      - flink_jobmanager_data:/tmp/flink-logs
+      # libs 
+      - ./libs/hadoop-3.3.6:/opt/hadoop
+      - ./libs/flink-sql-connector-hive-3.1.3_2.12-1.20.1.jar:/opt/flink/lib/flink-sql-connector-hive-3.1.3_2.12-1.20.1.jar
+      - ./libs/flink-sql-connector-kafka-3.3.0-1.20.jar:/opt/flink/lib/flink-sql-connector-kafka-3.3.0-1.20.jar
+      - ./libs/flink-connector-kafka-3.3.0-1.20.jar:/opt/flink/lib/flink-connector-kafka-3.3.0-1.20.jar
+      - ./libs/flink-json-2.0.0.jar:/opt/flink/lib/flink-json-2.0.0.jar
+      - ./libs/kafka-clients-3.3.0.jar:/opt/flink/lib/kafka-clients-3.3.0.jar
+      - ./libs/flink-sql-parquet-1.20.1.jar:/opt/flink/lib/flink-sql-parquet-1.20.1.jar
+      - ./libs/delta-flink-3.3.1.jar:/opt/flink/lib/delta-flink-3.3.1.jar
+      - ./libs/delta-standalone_2.12-3.3.1.jar:/opt/flink/lib/delta-standalone_2.12-3.3.1.jar
+      - ./libs/delta-storage-3.3.1.jar:/opt/flink/lib/delta-storage-3.3.1.jar
+      - ./libs/scala-library-2.12.18.jar:/opt/flink/lib/scala-library-2.12.18.jar
+      - ./libs/shapeless_2.12-2.3.4.jar:/opt/flink/lib/shapeless_2.12-2.3.4.jar
+      # Catalogs
+      - ./flink/catalogs/hive.yaml:/opt/flink/conf/catalogs/hive.yaml
+    depends_on:  
+      - hive-metastore 
+        
+  flink-taskmanager: 
+    image: flink:${FLINK_VERSION}
+    restart: unless-stopped
+    depends_on:
+      - hive-metastore
+    container_name: flink-taskmanager
+    hostname: flink-taskmanager
+    command: taskmanager
+    environment:
+      HADOOP_USER_NAME: hive
+      HADOOP_CLASSPATH: /opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/hdfs:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/yarn:/opt/hadoop/share/hadoop/yarn/lib/*:/opt/hadoop/share/hadoop/yarn/* 
+      FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager \n
+        taskmanager.numberOfTaskSlots: 3\n
+        state.backend.type: rocksdb\n
+        execution.checkpointing.dir: hdfs://hadoop-namenode/raw.datalake.mydomain.com/checkpointing/checkpoints\n
+        execution.checkpointing.savepoint-dir: hdfs://hadoop-namenode/raw.datalake.mydomain.com/checkpointing/savepoints\n
+        execution.checkpointing.interval: 10\n
+        state.checkpointing.dir: hdfs://hadoop-namenode/raw.datalake.mydomain.com/checkpointing/checkpoints\n
+        state.checkpointing.savepoint-dir: hdfs://hadoop-namenode/raw.datalake.mydomain.com/checkpointing/savepoints\n
+        state.checkpointing.interval: 10\n
+        table.catalog-store.kind: file \n
+        table.catalog-store.file.path: /opt/flink/conf/catalogs \n
+        hive.metastore.uris: thrift://hive-metastore:9083" 
+      #FLINK_HEAP_SIZE: 2g
+      DISABLE_JEMALLOC: true 
+      # Configuração para usar o Hive Metastore (mesma do JobManager) 
+      FLINK_HIVE_METASTORE_URI: thrift://hive-metastore:9083
+      #FLINK_HIVE_METASTORE_VERSION: hive1.2.1 
+      # Verifique a versão correta do seu Hive
+    volumes: 
+      - ./hive/hive-site.xml:/opt/hive/conf/hive-site.xml
+      - ./flink/sql-gateway-defaults.yaml:/opt/flink/conf/sql-gateway-defaults.yaml
+      #- ./flink/config.yaml:/opt/flink/conf/config.yaml
+      - flink_taskmanager_data:/tmp/flink-logs 
+      # Libs
+      - ./libs/hadoop-3.3.6:/opt/hadoop
+      - ./libs/flink-sql-connector-hive-3.1.3_2.12-1.20.1.jar:/opt/flink/lib/flink-sql-connector-hive-3.1.3_2.12-1.20.1.jar
+      - ./libs/flink-sql-connector-kafka-3.3.0-1.20.jar:/opt/flink/lib/flink-sql-connector-kafka-3.3.0-1.20.jar
+      - ./libs/flink-connector-kafka-3.3.0-1.20.jar:/opt/flink/lib/flink-connector-kafka-3.3.0-1.20.jar
+      - ./libs/kafka-clients-3.3.0.jar:/opt/flink/lib/kafka-clients-3.3.0.jar
+      - ./libs/flink-json-2.0.0.jar:/opt/flink/lib/flink-json-2.0.0.jar
+      - ./libs/flink-sql-parquet-1.20.1.jar:/opt/flink/lib/flink-sql-parquet-1.20.1.jar
+      - ./libs/delta-flink-3.3.1.jar:/opt/flink/lib/delta-flink-3.3.1.jar
+      - ./libs/delta-standalone_2.12-3.3.1.jar:/opt/flink/lib/delta-standalone_2.12-3.3.1.jar
+      - ./libs/delta-storage-3.3.1.jar:/opt/flink/lib/delta-storage-3.3.1.jar
+      - ./libs/scala-library-2.12.18.jar:/opt/flink/lib/scala-library-2.12.18.jar
+      - ./libs/shapeless_2.12-2.3.4.jar:/opt/flink/lib/shapeless_2.12-2.3.4.jar
+      # Catalogs
+      - ./flink/catalogs/hive.yaml:/opt/flink/conf/catalogs/hive.yaml
+       
+        
+  flink-sql-gateway: 
+    image: flink:${FLINK_VERSION}
+    restart: unless-stopped
+    container_name: flink-sql-gateway
+    hostname: flink-sql-gateway
+    ports: 
+      - "8082:8082"
+      - "8083:8083" 
+    command: /opt/flink/bin/sql_gateway_init.sh
+    environment:
+      HADOOP_USER_NAME: hive
+      HADOOP_CLASSPATH: /opt/hadoop/etc/hadoop:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/common/*:/opt/hadoop/share/hadoop/hdfs:/opt/hadoop/share/hadoop/hdfs/lib/*:/opt/hadoop/share/hadoop/hdfs/*:/opt/hadoop/share/hadoop/mapreduce/*:/opt/hadoop/share/hadoop/yarn:/opt/hadoop/share/hadoop/yarn/lib/*:/opt/hadoop/share/hadoop/yarn/* 
+      DISABLE_JEMALLOC: true
+      FLINK_PROPERTIES: "jobmanager.rpc.address: flink-jobmanager \n
+        taskmanager.bind-host: flink-taskmanager\n 
+        jobmanager.bind-host: flink-jobmanager\n 
+        taskmanager.host: flink-taskmanager\n 
+        rest.address: flink-jobmanager \n
+        sql-gateway.endpoint.rest.address: 0.0.0.0 \n
+        table.catalog-store.kind: file \n
+        table.catalog-store.file.path: /opt/flink/conf/catalogs \n
+        hive.metastore.uris: thrift://hive-metastore:9083 \n
+        state.checkpointing.dir: hdfs://hadoop-namenode/raw.datalake.mydomain.com/checkpointing/checkpoints \n
+        state.checkpointing.savepoint-dir: hdfs://hadoop-namenode/raw.datalake.mydomain.com/checkpointing/savepoints \n
+        state.checkpointing.interval: 10\n" 
+    volumes: 
+      - ./flink/sql_gateway_init.sh:/opt/flink/bin/sql_gateway_init.sh
+      - ./hive/hive-site.xml:/opt/hive/conf/hive-site.xml
+      - ./hadoop/core-site.xml:/opt/hadoop/conf/core-site.xml
+      - ./flink/sql-gateway-defaults.yaml:/opt/flink/conf/sql-gateway-defaults.yaml
+      - flink_sql_gateway_data:/tmp/flink-logs
+      # Libs
+      - ./libs/flink-sql-connector-hive-3.1.3_2.12-1.20.1.jar:/opt/flink/lib/flink-sql-connector-hive-3.1.3_2.12-1.20.1.jar
+      - ./libs/flink-sql-connector-kafka-3.3.0-1.20.jar:/opt/flink/lib/flink-sql-connector-kafka-3.3.0-1.20.jar
+      - ./libs/flink-connector-kafka-3.3.0-1.20.jar:/opt/flink/lib/flink-connector-kafka-3.3.0-1.20.jar
+
+      - ./libs/kafka-clients-3.3.0.jar:/opt/flink/lib/kafka-clients-3.3.0.jar
+
+      - ./libs/flink-json-2.0.0.jar:/opt/flink/lib/flink-json-2.0.0.jar
+
+      - ./libs/flink-connector-hive_2.12-1.20.1.jar:/opt/flink/lib/flink-connector-hive_2.12-1.20.1.jar
+      - ./libs/flink-sql-parquet-1.20.1.jar:/opt/flink/lib/flink-sql-parquet-1.20.1.jar
+      - ./libs/delta-flink-3.3.1.jar:/opt/flink/lib/delta-flink-3.3.1.jar
+      - ./libs/delta-standalone_2.12-3.3.1.jar:/opt/flink/lib/delta-standalone_2.12-3.3.1.jar
+      - ./libs/delta-storage-3.3.1.jar:/opt/flink/lib/delta-storage-3.3.1.jar
+      - ./libs/scala-library-2.12.18.jar:/opt/flink/lib/scala-library-2.12.18.jar
+      - ./libs/shapeless_2.12-2.3.4.jar:/opt/flink/lib/shapeless_2.12-2.3.4.jar
+      #- ./libs/flink-connector-hive_2.12-1.20.1.jar:/opt/flink/lib/flink-connector-hive_2.12-1.20.1.jar
+      #- ./libs/flink-table-api-java-2.0.0.jar:/opt/flink/lib/flink-table-api-java-2.0.0.jar 
+      - ./libs/hadoop-3.3.6:/opt/hadoop
+      # Catalogs
+      - ./flink/catalogs/hive.yaml:/opt/flink/conf/catalogs/hive.yaml
+      - ./flink/catalogs/delta.yaml:/opt/flink/conf/catalogs/delta.yaml
+      - ./flink/catalogs/kafka.yaml:/opt/flink/conf/catalogs/kafka.yaml
+    depends_on:  
+      - hive-metastore 
+      - flink-jobmanager
+
+  trino:
+    image: trinodb/trino:${TRINO_VERSION}
+    container_name: trino
+    restart: always
+    depends_on:
+      hive-metastore:
+        condition: service_started
+    volumes:
+      - ./trino/delta.properties:/etc/trino/catalog/delta.properties
+    ports:
+      - 8080:8080
+
+  jupyterhub:
+    image:  jupyter/all-spark-notebook:spark-3.4.1
+    hostname: jupyterhub
+    container_name: jupyterhub
+    ports:
+      - 8888:8888
+      - 4040:4040
+    volumes:
+      - ./jupyterhub/work:/home/jovyan/work
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:${CONFLUENT_VERSION}
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - 22181:2181
+  
+  kafka:
+    image: confluentinc/cp-kafka:${CONFLUENT_VERSION}
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - 29092:29092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:${CONFLUENT_VERSION}
+    container_name: kafka-connect
+    hostname: kafka-connect
+    ports:
+      - 9001:8083
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:9092
+      CONNECT_GROUP_ID: kafka-connect
+      CONNECT_CONFIG_STORAGE_TOPIC: kafka-connect-storage
+      CONNECT_OFFSET_STORAGE_TOPIC: kafka-connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: kafka-connect-statuses
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STORAGE_TOPIC_REPLICATION_FACTOR: 1
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+
+  console:
+    image: docker.redpanda.com/redpandadata/console:${REDPANDA_CONSOLE_VERSION}
+    container_name: console
+    depends_on:
+      - schemaregistry
+      - kafka
+    restart: always
+    entrypoint: /bin/sh
+    command: -c "echo \"$$CONSOLE_CONFIG_FILE\" > /tmp/config.yml; /app/console"
+    ports:
+      - 9000:8080
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["kafka:9092"]
+          schemaRegistry:
+            enabled: true
+            urls: ["http://schemaregistry:8085"]
+        connect:
+          enabled: true
+          clusters:
+            - name: kafka-connect-cluster # Required field, will be used as identifier in the frontend
+              url: http://kafka-connect:8083
+              tls:
+                enabled: false # Trusted certs are still allowed by default
+              # username: admin
+              # password: # Set using flag --connect.clusters.0.password=secret
+            # - name: analytics # Required field, will be used as identifier in the frontend
+            #  url: http://analytics.mycompany.com:8083
+
+  schemaregistry:
+    image: confluentinc/cp-schema-registry:${CONFLUENT_VERSION}
+    depends_on: 
+      - kafka
+    #container_name: schemaregistry.${COMPOSE_PROJECT_NAME}
+    hostname: schemaregistry
+    domainname: ${COMPOSE_PROJECT_NAME}
+    restart: always
+    healthcheck:
+      start_period: 10s
+      interval: 10s
+      retries: 20
+      test: curl --user superUser:superUser --fail --silent --insecure https://schemaregistry:8085/subjects --output /dev/null || exit 1
+    ports:
+      - 8085:8085
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schemaregistry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8085
+      SCHEMA_REGISTRY_DEBUG: 'true'
+
+
+# Volumes para persistência de dados
+volumes: 
+  zookeeper_data: 
+  hive_data: 
+  flink_jobmanager_data: 
+  flink_taskmanager_data: 
+  flink_sql_gateway_data: 
+
+networks:
+  default:
+    external: false
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1
+    name: ${COMPOSE_PROJECT_NAME}.com
