@@ -1,0 +1,42 @@
+################################################################################
+# Pipeline Flink CDC: PostgreSQL (cdc_source.public.customers) -> Iceberg (MinIO)
+#
+# O sink usa um catalogo Iceberg do tipo "hive", registrando as tabelas no Hive
+# Metastore compartilhado. Os dados sao gravados no bucket s3a://warehouse do MinIO.
+# O Trino le essas mesmas tabelas pelo catalogo "iceberg".
+################################################################################
+
+source:
+  type: postgres
+  name: Postgres CDC Source
+  hostname: postgres
+  port: 5432
+  username: postgres
+  password: postgres
+  # formato: <database>.<schema>.<table>
+  tables: cdc_source.public.customers
+  slot.name: flink_cdc_slot
+  decoding.plugin.name: pgoutput
+  # nome da publicacao criada no init do Postgres
+  debezium.publication.name: dbz_publication
+
+sink:
+  type: iceberg
+  name: Iceberg Sink (MinIO via Hive Metastore)
+  # Catalogo Iceberg do tipo Hive: registra as tabelas no Hive Metastore
+  # compartilhado. Toda a configuracao (incluindo S3) e passada via
+  # catalog.properties.* (unico prefixo pass-through nesta versao).
+  catalog.properties.type: hive
+  catalog.properties.uri: thrift://hive-metastore:9083
+  catalog.properties.warehouse: s3://warehouse/
+  # S3FileIO nativo do Iceberg (AWS SDK v2) apontando para o MinIO
+  catalog.properties.io-impl: org.apache.iceberg.aws.s3.S3FileIO
+  catalog.properties.s3.endpoint: http://minio:9000
+  catalog.properties.s3.path-style-access: "true"
+  catalog.properties.s3.access-key-id: minio
+  catalog.properties.s3.secret-access-key: minio123
+  catalog.properties.client.region: us-east-1
+
+pipeline:
+  name: Postgres to Iceberg CDC Pipeline
+  parallelism: 1

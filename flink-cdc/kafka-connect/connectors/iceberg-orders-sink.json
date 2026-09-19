@@ -1,0 +1,38 @@
+{
+  "name": "orders-iceberg-sink",
+  "config": {
+    "connector.class": "io.tabular.iceberg.connect.IcebergSinkConnector",
+    "tasks.max": "1",
+    "topics": "cdc.public.orders",
+
+    "comment-semantica": "APPEND-ONLY / CHANGELOG. NAO definimos id-columns, entao o sink NAO faz upsert: cada evento CDC (insert/update/delete apos o unwrap) vira uma LINHA NOVA na tabela Iceberg. E a camada de chegada bruta (bronze): barata de escrever, sem equality deletes, ideal para auditoria e reprocessamento posterior.",
+
+    "iceberg.tables": "changelog.orders",
+    "comment-commit": "Intervalo de commit reduzido para 15s (default e 5min) para o changelog aparecer rapido no Trino durante o teste.",
+    "iceberg.control.commit.interval-ms": "15000",
+    "comment-offset": "Le o topico desde o inicio para capturar tambem o snapshot (default seria latest).",
+    "consumer.override.auto.offset.reset": "earliest",
+    "iceberg.tables.auto-create-enabled": "true",
+    "iceberg.tables.evolve-schema-enabled": "true",
+    "iceberg.tables.schema-force-optional": "true",
+    "comment-particao": "Particiona por dia de created_at (mesma chave temporal do Teste A). O Iceberg sink suporta transforms nativos day()/hours(), diferente do sink do Flink CDC. created_at chega como timestamp apos o unwrap.",
+    "iceberg.tables.default-partition-by": "day(created_at)",
+
+    "comment-catalog": "Mesmo Hive Metastore + MinIO usados pelos demais pipelines.",
+    "iceberg.catalog.type": "hive",
+    "iceberg.catalog.uri": "thrift://hive-metastore:9083",
+    "iceberg.catalog.warehouse": "s3a://warehouse/",
+    "iceberg.catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
+    "iceberg.catalog.client.region": "us-east-1",
+    "iceberg.catalog.s3.endpoint": "http://minio:9000",
+    "iceberg.catalog.s3.path-style-access": "true",
+    "iceberg.catalog.s3.access-key-id": "minio",
+    "iceberg.catalog.s3.secret-access-key": "minio123",
+
+    "comment-avro": "Le as mensagens Avro do topico usando o Confluent Schema Registry. O schema Avro define a estrutura (Struct) que o Iceberg sink materializa nas colunas da tabela.",
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "key.converter.schema.registry.url": "http://schema-registry:8085",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter.schema.registry.url": "http://schema-registry:8085"
+  }
+}

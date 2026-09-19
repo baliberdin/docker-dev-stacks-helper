@@ -1,0 +1,51 @@
+################################################################################
+# TESTE A - Flink CDC: PostgreSQL (cdc_source.public.orders) -> Iceberg (MinIO)
+#
+# Semantica: ESPELHO DO ESTADO (upsert por PK), igual ao pipeline original, porem
+# PARTICIONADO por data de criacao. Como o sink Iceberg do Flink CDC 3.5.0 so
+# suporta particao por IDENTIDADE de coluna (nao ha transforms day()/hour()),
+# derivamos uma coluna string "created_date" (yyyy-MM-dd) via transform e
+# particionamos por ela. Assim cada arquivo/particao agrupa um dia, o que reduz
+# o numero de arquivos que cada query/delete precisa considerar.
+#
+# Resultado no Trino: iceberg.public.orders (particionada por created_date).
+################################################################################
+
+source:
+  type: postgres
+  name: Postgres CDC Source (orders)
+  hostname: postgres
+  port: 5432
+  username: postgres
+  password: postgres
+  tables: cdc_source.public.orders
+  slot.name: flink_cdc_slot_orders
+  decoding.plugin.name: pgoutput
+  debezium.publication.name: dbz_publication
+
+transform:
+  # Deriva a coluna de particao created_date a partir do timestamp created_at.
+  - source-table: cdc_source.public.orders
+    projection: \*, DATE_FORMAT(created_at, 'yyyy-MM-dd') AS created_date
+    primary-keys: id
+    partition-keys: created_date
+    description: Deriva created_date (yyyy-MM-dd) para particionar a tabela Iceberg
+
+sink:
+  type: iceberg
+  name: Iceberg Sink orders (particionado por created_date)
+  catalog.properties.type: hive
+  catalog.properties.uri: thrift://hive-metastore:9083
+  catalog.properties.warehouse: s3://warehouse/
+  catalog.properties.io-impl: org.apache.iceberg.aws.s3.S3FileIO
+  catalog.properties.s3.endpoint: http://minio:9000
+  catalog.properties.s3.path-style-access: "true"
+  catalog.properties.s3.access-key-id: minio
+  catalog.properties.s3.secret-access-key: minio123
+  catalog.properties.client.region: us-east-1
+  # Particao por identidade da coluna derivada.
+  partition.key: cdc_source.public.orders:created_date
+
+pipeline:
+  name: "[Teste A] Postgres orders -> Iceberg particionado"
+  parallelism: 1

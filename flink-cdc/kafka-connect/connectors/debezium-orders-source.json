@@ -1,0 +1,40 @@
+{
+  "name": "orders-postgres-source",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "postgres",
+    "database.password": "postgres",
+    "database.dbname": "cdc_source",
+    "topic.prefix": "cdc",
+
+    "plugin.name": "pgoutput",
+    "publication.name": "dbz_publication",
+    "slot.name": "dbz_orders_slot",
+    "schema.include.list": "public",
+    "table.include.list": "public.orders",
+
+    "comment-snapshot": "always: refaz o snapshot a cada (re)start do connector. Simplifica a reprodutibilidade do teste; em producao normalmente e 'initial'.",
+    "snapshot.mode": "always",
+    "tombstones.on.delete": "false",
+
+    "comment-time": "time.precision.mode=connect faz o Debezium emitir TIMESTAMP/DATE usando os tipos logicos padrao do Kafka Connect (org.apache.kafka.connect.data.Timestamp), que o Iceberg sink reconhece como coluna timestamp. Sem isso, created_at vira BIGINT (epoch) e o particionamento day(created_at) nao funciona.",
+    "time.precision.mode": "connect",
+
+    "comment": "Unwrap (ExtractNewRecordState): achata o envelope Debezium (before/after) para o registro plano, e adiciona colunas de metadados de operacao. rewrite mantem DELETEs como linhas (com __deleted=true) em vez de virar tombstone, essencial para o changelog append-only.",
+    "transforms": "unwrap",
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.drop.tombstones": "true",
+    "transforms.unwrap.delete.handling.mode": "rewrite",
+    "transforms.unwrap.add.fields": "op,table,lsn,source.ts_ms",
+
+    "comment-avro": "Serializa key e value em Avro, registrando os schemas no Confluent Schema Registry. Os subjects seguem a estrategia TopicNameStrategy: cdc.public.orders-key e cdc.public.orders-value.",
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "key.converter.schema.registry.url": "http://schema-registry:8085",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter.schema.registry.url": "http://schema-registry:8085"
+  }
+}

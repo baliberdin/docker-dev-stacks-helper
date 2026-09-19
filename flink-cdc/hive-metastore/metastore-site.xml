@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+    <!-- =====================================================================
+         Backend de metadados: PostgreSQL (banco "metastore")
+         ===================================================================== -->
+    <property>
+        <name>javax.jdo.option.ConnectionURL</name>
+        <value>jdbc:postgresql://postgres:5432/metastore</value>
+    </property>
+    <property>
+        <name>javax.jdo.option.ConnectionDriverName</name>
+        <value>org.postgresql.Driver</value>
+    </property>
+    <property>
+        <name>javax.jdo.option.ConnectionUserName</name>
+        <value>postgres</value>
+    </property>
+    <property>
+        <name>javax.jdo.option.ConnectionPassword</name>
+        <value>postgres</value>
+    </property>
+
+    <!-- =====================================================================
+         Metastore standalone (sem Hive server), escutando thrift na 9083
+         ===================================================================== -->
+    <property>
+        <name>metastore.thrift.port</name>
+        <value>9083</value>
+    </property>
+    <property>
+        <name>metastore.warehouse.dir</name>
+        <value>s3a://warehouse/</value>
+    </property>
+    <property>
+        <name>hive.metastore.warehouse.dir</name>
+        <value>s3a://warehouse/</value>
+    </property>
+    <property>
+        <name>metastore.expression.proxy</name>
+        <value>org.apache.hadoop.hive.metastore.DefaultPartitionExpressionProxy</value>
+    </property>
+    <property>
+        <name>metastore.task.threads.always</name>
+        <value>org.apache.hadoop.hive.metastore.events.EventCleanerTask</value>
+    </property>
+    <!-- Nao validar/atualizar schema automaticamente em runtime; usamos schematool -->
+    <property>
+        <name>datanucleus.schema.autoCreateAll</name>
+        <value>false</value>
+    </property>
+    <property>
+        <name>metastore.schema.verification</name>
+        <value>false</value>
+    </property>
+
+    <!-- =====================================================================
+         Configuracao S3A apontando para o MinIO
+         ===================================================================== -->
+    <property>
+        <name>fs.s3a.endpoint</name>
+        <value>http://minio:9000</value>
+    </property>
+    <property>
+        <name>fs.s3a.access.key</name>
+        <value>minio</value>
+    </property>
+    <property>
+        <name>fs.s3a.secret.key</name>
+        <value>minio123</value>
+    </property>
+    <property>
+        <name>fs.s3a.path.style.access</name>
+        <value>true</value>
+    </property>
+    <property>
+        <name>fs.s3a.connection.ssl.enabled</name>
+        <value>false</value>
+    </property>
+    <property>
+        <name>fs.s3a.impl</name>
+        <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+    </property>
+    <property>
+        <name>fs.s3a.aws.credentials.provider</name>
+        <value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value>
+    </property>
+
+    <!-- =====================================================================
+         O HiveCatalog do Iceberg usa o warehouse s3://... (esquema S3FileIO).
+         Quando o metastore cria o location de um namespace/tabela, ele instancia
+         um Hadoop FileSystem para esse esquema. Mapeamos "s3" para o mesmo
+         S3AFileSystem para o metastore conseguir criar/validar os diretorios.
+         ===================================================================== -->
+    <property>
+        <name>fs.s3.impl</name>
+        <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+    </property>
+    <property>
+        <name>fs.s3.endpoint</name>
+        <value>http://minio:9000</value>
+    </property>
+    <property>
+        <name>fs.s3.access.key</name>
+        <value>minio</value>
+    </property>
+    <property>
+        <name>fs.s3.secret.key</name>
+        <value>minio123</value>
+    </property>
+    <property>
+        <name>fs.s3.path.style.access</name>
+        <value>true</value>
+    </property>
+    <property>
+        <name>fs.s3.connection.ssl.enabled</name>
+        <value>false</value>
+    </property>
+</configuration>

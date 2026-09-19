@@ -1,0 +1,5 @@
+# Variaveis locais (ex.: modo demo da manutencao Iceberg). Use .env.example como base.
+.env
+
+# Artefatos locais
+*.log
